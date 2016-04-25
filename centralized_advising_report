@@ -561,6 +561,52 @@ advisor <- function(category) {
         }
 ```
 
+```{r major, echo=FALSE, warning=FALSE, message=FALSE}
+major <- function(category) {
+        ## provides the overall rate
+        x <- data %>%
+                filter(tolower(ipeds.category) == category) %>%
+                select(term, 
+                       advisor,
+                       enrolled) %>%
+                rename(Advisor = advisor) %>%
+                mutate(term = paste("Fall", 
+                                    substr(term, 1, 4), 
+                                    sep = " ")) %>%
+                group_by(term, 
+                         Advisor) %>%
+                summarize(total = n(),
+                          ret = sum(enrolled)) %>%
+                mutate(next_year = ret / total)
+        
+        y <- x 
+        
+        y <- y %>%
+                select(term, 
+                       Advisor,
+                       total, 
+                       next_year) %>%
+                mutate(next_year = format(round(next_year, 3), nsmall = 3)) %>%
+                gather(Category, 
+                       number, 
+                       -term, 
+                       -Advisor) %>%
+                spread(term, 
+                       number) %>%
+                mutate(Category = ifelse(Category == "total", 
+                                         "1. Number", 
+                                         Category),
+                       Category = ifelse(Category == "next_year", 
+                                         "2. Next Fall", 
+                                         Category)) %>%
+                arrange(Advisor, 
+                        Category)
+        
+        return(y)
+        
+        }
+```
+
 ```{r student population, echo=FALSE}
 stu.pop <- ipeds[1, 2]
 ```
@@ -582,8 +628,9 @@ Exhibit 2 displays the retention rate by college of primary major for the `r sap
 knitr::kable(college.rate(category = stu.pop))
 ```
 
-Exhibit 3 shows the retention rate by advisor for the `r sapply(stu.pop, simpleCap)`. 
+Exhibit 3 shows the retention rate by advisor for the `r sapply(stu.pop, simpleCap)`. Of the academic advisors, `r advisor(category = stu.pop) %>% filter(Category == "2. Next Fall" & Advisor != "Other Majors") %>% select(-Category) %>% gather(term, rate, -Advisor) %>% mutate(term = as.numeric(substr(term, 6, 9))) %>% filter(term >= max(term) - 1) %>% mutate(term = ifelse(term == max(term), "max.term", "min.term")) %>% spread(term, rate) %>% mutate(max.term = as.numeric(max.term), min.term = as.numeric(min.term)) %>% group_by(Advisor) %>% summarize(rate.change = max.term - min.term) %>% filter(rate.change == max(rate.change)) %>% select(Advisor)` has the highest retention rate increase from `r paste("Fall", advisor(category = stu.pop) %>% filter(Category == "2. Next Fall" & Advisor != "Other Majors") %>% select(-Category) %>% gather(term, rate, -Advisor) %>% mutate(term = as.numeric(substr(term, 6, 9))) %>% filter(term >= max(term) - 1) %>% filter(term == min(term) & !duplicated(term)) %>% select(term), sep = " ")` cohort to `r paste("Fall", advisor(category = stu.pop) %>% filter(Category == "2. Next Fall" & Advisor != "Other Majors") %>% select(-Category) %>% gather(term, rate, -Advisor) %>% mutate(term = as.numeric(substr(term, 6, 9))) %>% filter(term >= max(term) - 1) %>% filter(term == max(term) & !duplicated(term)) %>% select(term), sep = " ")` cohort, while `r advisor(category = stu.pop) %>% filter(Category == "2. Next Fall" & Advisor != "Other Majors") %>% select(-Category) %>% gather(term, rate, -Advisor) %>% mutate(term = as.numeric(substr(term, 6, 9))) %>% filter(term >= max(term) - 1) %>% mutate(term = ifelse(term == max(term), "max.term", "min.term")) %>% spread(term, rate) %>% mutate(max.term = as.numeric(max.term), min.term = as.numeric(min.term)) %>% group_by(Advisor) %>% summarize(rate.change = max.term - min.term) %>% filter(rate.change == min(rate.change)) %>% select(Advisor)` has the highest retention rate decrease for the same time period. `r advisor(category = stu.pop) %>% filter(Category == "2. Next Fall" & Advisor != "Other Majors") %>% select(-Category) %>% gather(term, rate, -Advisor) %>% mutate(term = as.numeric(substr(term, 6, 9))) %>% filter(term == max(term)) %>% filter(rate == max(rate)) %>% select(Advisor)` has the highest retention rate for `r paste("Fall", advisor(category = stu.pop) %>% filter(Category == "2. Next Fall" & Advisor != "Other Majors") %>% select(-Category) %>% gather(term, rate, -Advisor) %>% mutate(term = as.numeric(substr(term, 6, 9))) %>% filter(term == max(term)) %>% filter(rate == max(rate)) %>% select(term), sep = " ")` cohort, while `r advisor(category = stu.pop) %>% filter(Category == "2. Next Fall" & Advisor != "Other Majors") %>% select(-Category) %>% gather(term, rate, -Advisor) %>% mutate(term = as.numeric(substr(term, 6, 9))) %>% filter(term == max(term)) %>% filter(rate == min(rate)) %>% select(Advisor)` has the lowest retention rate for the same cohort.
 
+**Exhibit 3: Retention Rate by Centralized Advising Academic Advisor**
 ```{r, echo=FALSE, results = 'asis'}
 knitr::kable(advisor(category = stu.pop))
 ```
