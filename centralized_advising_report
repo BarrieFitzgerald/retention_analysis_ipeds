@@ -1,0 +1,589 @@
+---
+output: word_document
+---
+
+```{r setting working directory, echo=FALSE, warning=FALSE, message=FALSE}
+setwd("V:/dept/SRA/Enrollment/Enrollment--Fall, Spring, and Summer/1. Fall Enrollment/Fall 2016/Retention Rates/")
+```
+
+```{r number of days, echo=FALSE, warning=FALSE, message=FALSE}
+numb_days <- -112
+```
+
+```{r libraries and options used, echo=FALSE, warning=FALSE, message=FALSE}
+## libraries used
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(ggmap)
+library(sp)
+library(knitr)
+library(gridExtra)
+options(scipen = 999)
+```
+
+```{r Proper case function, echo=FALSE}
+simpleCap <- function(x) {
+  s <- strsplit(x, " ")[[1]]
+  paste(toupper(substring(s, 1,1)), substring(s, 2),
+      sep="", collapse=" ")
+}
+```
+
+```{r data connections to pull needed data, echo=FALSE, warning=FALSE, message=FALSE}
+data.pull <- function(term, day) {
+        ## installing database connection and loading library
+        ifelse(!require(RODBC), install.packages("RODBC"), require(RODBC))
+        library(RODBC)
+        year <- as.numeric(substr(Sys.Date(), 1, 4))
+        titan.query <- paste0("select * from (select dses.term_code_key, dses.id,  dses.daterun - dt.term_start_date as days from banner_files.dw_student_enrollment_summary dses join banner_cube.dim_time dt on dt.term_code = dses.term_code_key where dses.term_code_key = '", 
+                              term, 
+                              "') where days = '", 
+                              day,
+                              "'")
+        ## opening the connection to Titan to pull the data
+        data.connection <- odbcConnect("TITAN", uid = "DMUSER", pwd = "welcome1n", believeNRows=FALSE)
+        ## pulling the data
+        ftd <- sqlQuery(channel = data.connection, query = titan.query)
+        return(ftd)
+        ## closing the connection
+        close(data.connection)
+}
+
+grad.pull <- function(term) {
+        ## installing database connection and loading library
+        ifelse(!require(RODBC), install.packages("RODBC"), require(RODBC))
+        library(RODBC)
+        year <- as.numeric(substr(Sys.Date(), 1, 4))
+        titan.query <- paste0("select distinct dp.vsu_id, fg.term_code from banner_cube.fact_graduation fg join banner_cube.dim_person dp on dp.pidm = fg.pidm where term_code >= '", 
+                              term, 
+                              "' and term_code < '", 
+                              term, 
+                              "' + 100 and decision_code != 'DE'")
+        ## opening the connection to Titan to pull the data
+        data.connection <- odbcConnect("TITAN", uid = "DMUSER", pwd = "welcome1n", believeNRows=FALSE)
+        ## pulling the data
+        ftd <- sqlQuery(channel = data.connection, query = titan.query)
+        return(ftd)
+        ## closing the connection
+        close(data.connection)
+}
+
+
+college.pull <- function(term) {
+        ## installing database connection and loading library
+        ifelse(!require(RODBC), install.packages("RODBC"), require(RODBC))
+        library(RODBC)
+        year <- as.numeric(substr(Sys.Date(), 1, 4))
+        titan.query <- paste0("select term, student_id, major from odi.student_term_details where term >= '", 
+                              term, 
+                              "' and term_desc like '%Fall%'")
+        ## opening the connection to Titan to pull the data
+        data.connection <- odbcConnect("TITAN", uid = "DMUSER", pwd = "welcome1n", believeNRows=FALSE)
+        ## pulling the data
+        ftd <- sqlQuery(channel = data.connection, query = titan.query)
+        return(ftd)
+        ## closing the connection
+        close(data.connection)
+}
+
+spring.pull <- function(term) {
+        ## installing database connection and loading library
+        ifelse(!require(RODBC), install.packages("RODBC"), require(RODBC))
+        library(RODBC)
+        year <- as.numeric(substr(Sys.Date(), 1, 4))
+        titan.query <- paste0("select term as spring_term,  student_id, 1 as spring_enrolled from odi.student_term_details where term = '", 
+                              term, 
+                              "' + 94")
+        ## opening the connection to Titan to pull the data
+        data.connection <- odbcConnect("TITAN", uid = "DMUSER", pwd = "welcome1n", believeNRows=FALSE)
+        ## pulling the data
+        ftd <- sqlQuery(channel = data.connection, query = titan.query)
+        return(ftd)
+        ## closing the connection
+        close(data.connection)
+}
+
+college <- function(term.code) {
+        x <- read.csv("./majors_official.csv", header = TRUE, stringsAsFactors = FALSE) %>%
+                rename(STUDENT_ID = INST_STUDENT_ID) %>%
+                left_join(college.pull(term = 201108)) %>%
+                mutate(MAJOR = as.character(MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) & 
+                                              grepl(pattern = "99999900", x = CIP_CODE_official) == TRUE, 
+                                      "Undecided", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "13131201", x = CIP_CODE_official) == TRUE, 
+                                      "Music Education-Grades PreK-12", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "13121001", x = CIP_CODE_official) == TRUE, 
+                                      "Early Childhood", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "43010401", x = CIP_CODE_official) == TRUE, 
+                                      "Criminal Justice", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "31059901", x = CIP_CODE_official) == TRUE, 
+                                      "Exercise Physiology", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "42010101", x = CIP_CODE_official) == TRUE, 
+                                      "Exercise Physiology", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "52040101", x = CIP_CODE_official) == TRUE, 
+                                      "Officie Admin Tech", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "51380101", x = CIP_CODE_official) == TRUE, 
+                                      "Nursing", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "24010101", x = CIP_CODE_official) == TRUE, 
+                                      "Associates", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              (grepl(pattern = "24010299", x = CIP_CODE_official) == TRUE |
+                                                       grepl(pattern = "24019901", x = CIP_CODE_official) == TRUE), 
+                                      "General Studies", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "26010101", x = CIP_CODE_official) == TRUE, 
+                                      "Biology", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "52140101", x = CIP_CODE_official) == TRUE, 
+                                      "Marketing", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "45100101", x = CIP_CODE_official) == TRUE, 
+                                      "Political Science", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "52021300", x = CIP_CODE_official) == TRUE, 
+                                      "Organizational Leadership", 
+                                      MAJOR), 
+                       MAJOR = ifelse(is.na(MAJOR) &
+                                              grepl(pattern = "13100101", x = CIP_CODE_official) == TRUE, 
+                                      "Special Education", 
+                                      MAJOR)) %>%
+                left_join(read.csv("./major_college.csv", stringsAsFactors = FALSE)) %>%
+                select(-CIP_CODE_official, 
+                       -MAJOR) %>%
+                filter(TERM == term.code)
+        }
+
+
+data <- rbind(
+
+        read.csv("V:/dept/SRA/Surveys & Reporting/IPEDS (Federal Reporting)/IPEDS 2015-16/USG RPA Data/IPEDS_EF_Part_A_Fall2015_Details_Valdosta.csv", header = TRUE, stringsAsFactors = FALSE) %>%
+                mutate(term = 201508) %>%
+                select(term, 
+                       INST_STUDENT_ID, 
+                       IPEDS_RACE, 
+                       GENDER_CODE, 
+                       IPEDS_CATEGORY, 
+                       COUNTY_ORIGIN_CODE, 
+                       STATE_ORIGIN_CODE) %>%
+                mutate(county = as.numeric(COUNTY_ORIGIN_CODE), 
+                       TERM_CODE_KEY = term + 100) %>%
+                left_join(data.pull(term = 201608, day = numb_days) %>%
+                                  rename(INST_STUDENT_ID = ID, 
+                                         enrolled = DAYS) %>%
+                                  mutate(enrolled = 1)) %>%
+                left_join(college(term.code = 201508) %>%
+                                  rename(term = TERM, 
+                                         INST_STUDENT_ID = STUDENT_ID)) %>%
+                left_join(grad.pull(201508) %>%
+                                  mutate(semester = as.numeric(substr(TERM_CODE, 6, 6))) %>%
+                                  left_join(data.frame(semester = c(8, 2, 5), 
+                                                       semester_name = c("Fall", "Spring", "Summer"))) %>%
+                                  mutate(semester = 1) %>%
+                                  select(-TERM_CODE) %>%
+                                  spread(semester_name, 
+                                         semester) %>%
+                                  replace(is.na(.), 0) %>%
+                                  rename(INST_STUDENT_ID = VSU_ID) %>%
+                                  mutate(grad_ind = Fall + Spring + Summer) %>%
+                                  arrange(desc(grad_ind))) %>%
+                replace(is.na(.), 0) %>%
+                mutate(enroll_grad = ifelse(enrolled + grad_ind == 0, 0, 1), 
+                       SPRING_TERM = term + 94) %>%
+                rename(STUDENT_ID = INST_STUDENT_ID) %>%
+                left_join(spring.pull(term = 201508)) %>%
+                replace(is.na(.), 0) 
+        
+        ,
+        
+        read.csv("V:/dept/SRA/Surveys & Reporting/IPEDS (Federal Reporting)/IPEDS 2014-15/USG RPA Data/IPEDS_FE_Part_A_Fall2014_Details_Valdosta.csv", header = TRUE, stringsAsFactors = FALSE) %>%
+                mutate(term = 201408) %>%
+                select(term, 
+                       INST_STUDENT_ID, 
+                       IPEDS_RACE, 
+                       GENDER_CODE, 
+                       IPEDS_CATEGORY, 
+                       COUNTY_ORIGIN_CODE, 
+                       STATE_ORIGIN_CODE) %>%
+                mutate(county = as.numeric(COUNTY_ORIGIN_CODE), 
+                       TERM_CODE_KEY = term + 100) %>%
+                left_join(data.pull(term = 201508, day = numb_days) %>%
+                                  rename(INST_STUDENT_ID = ID, 
+                                         enrolled = DAYS) %>%
+                                  mutate(enrolled = 1)) %>%
+                left_join(college(term.code = 201408) %>%
+                                  rename(term = TERM, 
+                                         INST_STUDENT_ID = STUDENT_ID)) %>%
+                left_join(grad.pull(201408) %>%
+                                  mutate(semester = as.numeric(substr(TERM_CODE, 6, 6))) %>%
+                                  left_join(data.frame(semester = c(8, 2, 5), 
+                                                       semester_name = c("Fall", "Spring", "Summer"))) %>%
+                                  mutate(semester = 1) %>%
+                                  select(-TERM_CODE) %>%
+                                  spread(semester_name, 
+                                         semester) %>%
+                                  replace(is.na(.), 0) %>%
+                                  rename(INST_STUDENT_ID = VSU_ID) %>%
+                                  mutate(grad_ind = Fall + Spring + Summer) %>%
+                                  arrange(desc(grad_ind))) %>%
+                replace(is.na(.), 0) %>%
+                mutate(enroll_grad = ifelse(enrolled + grad_ind == 0, 0, 1), 
+                       SPRING_TERM = term + 94) %>%
+                rename(STUDENT_ID = INST_STUDENT_ID) %>%
+                left_join(spring.pull(term = 201408)) %>%
+                replace(is.na(.), 0)
+        
+        , 
+        
+        read.csv("V:/dept/SRA/Surveys & Reporting/IPEDS (Federal Reporting)/IPEDS 2013-14/USG RPA Data/IPEDS_FE_Part_A_Fall2013_Details_Valdosta.csv", header = TRUE, stringsAsFactors = FALSE) %>%
+                mutate(term = 201308) %>%
+                select(term, 
+                       INST_STUDENT_ID, 
+                       IPEDS_RACE, 
+                       GENDER_CODE, 
+                       IPEDS_CATEGORY, 
+                       COUNTY_ORIGIN_CODE, 
+                       STATE_ORIGIN_CODE) %>%
+                mutate(county = as.numeric(COUNTY_ORIGIN_CODE), 
+                       TERM_CODE_KEY = term + 100) %>%
+                left_join(data.pull(term = 201408, day = numb_days) %>%
+                                  rename(INST_STUDENT_ID = ID, 
+                                         enrolled = DAYS) %>%
+                                  mutate(enrolled = 1)) %>%
+                left_join(college(term.code = 201308) %>%
+                                  rename(term = TERM, 
+                                         INST_STUDENT_ID = STUDENT_ID)) %>%
+                left_join(grad.pull(201308) %>%
+                                  mutate(semester = as.numeric(substr(TERM_CODE, 6, 6))) %>%
+                                  left_join(data.frame(semester = c(8, 2, 5), 
+                                                       semester_name = c("Fall", "Spring", "Summer"))) %>%
+                                  mutate(semester = 1) %>%
+                                  select(-TERM_CODE) %>%
+                                  spread(semester_name, 
+                                         semester) %>%
+                                  replace(is.na(.), 0) %>%
+                                  rename(INST_STUDENT_ID = VSU_ID) %>%
+                                  mutate(grad_ind = Fall + Spring + Summer) %>%
+                                  arrange(desc(grad_ind))) %>%
+                replace(is.na(.), 0) %>%
+                mutate(enroll_grad = ifelse(enrolled + grad_ind == 0, 0, 1), 
+                       SPRING_TERM = term + 94) %>%
+                rename(STUDENT_ID = INST_STUDENT_ID) %>%
+                left_join(spring.pull(term = 201308)) %>%
+                replace(is.na(.), 0)
+        
+        ,
+        
+        read.csv("V:/dept/SRA/Surveys & Reporting/IPEDS (Federal Reporting)/IPEDS 2012-13/ipeds_EF_Valdosta_20132.csv", header = TRUE, stringsAsFactors = FALSE) %>%
+                mutate(term = 201208) %>%
+                select(term, 
+                       INST_STUDENT_ID, 
+                       IPEDS_RACE, 
+                       SEX_CODE, 
+                       IPEDS_CATEGORY, 
+                       COUNTY_ORIGIN, 
+                       STATE_ORIGIN) %>%
+                mutate(county = as.numeric(COUNTY_ORIGIN), 
+                       TERM_CODE_KEY = term + 100) %>%
+                rename(GENDER_CODE = SEX_CODE, 
+                       COUNTY_ORIGIN_CODE = COUNTY_ORIGIN, 
+                       STATE_ORIGIN_CODE = STATE_ORIGIN) %>%
+                left_join(data.pull(term = 201308, day = numb_days) %>%
+                                  rename(INST_STUDENT_ID = ID, 
+                                         enrolled = DAYS) %>%
+                                  mutate(enrolled = 1)) %>%
+                left_join(college(term.code = 201208) %>%
+                                  rename(term = TERM, 
+                                         INST_STUDENT_ID = STUDENT_ID)) %>%
+                left_join(grad.pull(201208) %>%
+                                  mutate(semester = as.numeric(substr(TERM_CODE, 6, 6))) %>%
+                                  left_join(data.frame(semester = c(8, 2, 5), 
+                                                       semester_name = c("Fall", "Spring", "Summer"))) %>%
+                                  mutate(semester = 1) %>%
+                                  select(-TERM_CODE) %>%
+                                  spread(semester_name, 
+                                         semester) %>%
+                                  replace(is.na(.), 0) %>%
+                                  rename(INST_STUDENT_ID = VSU_ID) %>%
+                                  mutate(grad_ind = Fall + Spring + Summer) %>%
+                                  arrange(desc(grad_ind))) %>%
+                replace(is.na(.), 0) %>%
+                mutate(enroll_grad = ifelse(enrolled + grad_ind == 0, 0, 1), 
+                       SPRING_TERM = term + 94) %>%
+                rename(STUDENT_ID = INST_STUDENT_ID) %>%
+                left_join(spring.pull(term = 201208)) %>%
+                replace(is.na(.), 0)
+        
+        , 
+        
+        read.csv("V:/dept/SRA/Surveys & Reporting/IPEDS (Federal Reporting)/IPEDS 2011-12/ipeds_EF_Valdosta_20122.csv", header = TRUE, stringsAsFactors = FALSE) %>%
+                mutate(term = 201108) %>%
+                select(term, 
+                       INST_STUDENT_ID, 
+                       IPEDS_RACE, 
+                       SEX_CODE, 
+                       IPEDS_CATEGORY, 
+                       COUNTY_ORIGIN, 
+                       STATE_ORIGIN) %>%
+                mutate(county = as.numeric(COUNTY_ORIGIN), 
+                       TERM_CODE_KEY = term + 100) %>%
+                rename(GENDER_CODE = SEX_CODE, 
+                       COUNTY_ORIGIN_CODE = COUNTY_ORIGIN, 
+                       STATE_ORIGIN_CODE = STATE_ORIGIN) %>%
+                left_join(data.pull(term = 201208, day = numb_days) %>%
+                                  rename(INST_STUDENT_ID = ID, 
+                                         enrolled = DAYS) %>%
+                                  mutate(enrolled = 1)) %>%
+                left_join(college(term.code = 201108) %>%
+                                  rename(term = TERM, 
+                                         INST_STUDENT_ID = STUDENT_ID)) %>%
+                left_join(grad.pull(201108) %>%
+                                  mutate(semester = as.numeric(substr(TERM_CODE, 6, 6))) %>%
+                                  left_join(data.frame(semester = c(8, 2, 5), 
+                                                       semester_name = c("Fall", "Spring", "Summer"))) %>%
+                                  mutate(semester = 1) %>%
+                                  select(-TERM_CODE) %>%
+                                  spread(semester_name, 
+                                         semester) %>%
+                                  replace(is.na(.), 0) %>%
+                                  rename(INST_STUDENT_ID = VSU_ID) %>%
+                                  mutate(grad_ind = Fall + Spring + Summer) %>%
+                                  arrange(desc(grad_ind))) %>%
+                replace(is.na(.), 0) %>%
+                mutate(enroll_grad = ifelse(enrolled + grad_ind == 0, 0, 1), 
+                       SPRING_TERM = term + 94) %>%
+                rename(STUDENT_ID = INST_STUDENT_ID) %>%
+                left_join(spring.pull(term = 201108)) %>%
+                replace(is.na(.), 0)
+        )
+```
+
+```{r ipeds category corrections, echo=FALSE, warning=FALSE, message=FALSE}
+ipeds <- data %>% 
+        select(IPEDS_CATEGORY) %>%
+        filter(!duplicated(IPEDS_CATEGORY)) %>%
+        mutate(IPEDS_CATEGORY = tolower(IPEDS_CATEGORY)) %>%
+        arrange(IPEDS_CATEGORY) %>%
+        mutate(ipeds.category = IPEDS_CATEGORY, 
+               ipeds.category = ifelse(IPEDS_CATEGORY == "full-time degree-seeking graduate students" |
+                                         IPEDS_CATEGORY == "full-time degree seeking graduate students", 
+                                 "full-time graduate students", 
+                                 ipeds.category),
+               ipeds.category = ifelse(IPEDS_CATEGORY == "part-time degree seeking graduate students" |
+                                         IPEDS_CATEGORY == "part-time graduate students", 
+                                 "part-time graduate students", 
+                                 ipeds.category)) %>%
+        filter(!duplicated(IPEDS_CATEGORY))
+```
+
+```{r data modifications, echo=FALSE, warning=FALSE, message=FALSE}
+
+data <- data %>% mutate(IPEDS_CATEGORY = tolower(IPEDS_CATEGORY), 
+                        race = NA, 
+                        race = ifelse(is.na(race) &
+                                              IPEDS_RACE == "White",
+                                      "1. White", 
+                                      race), 
+                        race = ifelse(is.na(race) &
+                                              IPEDS_RACE == "Black",
+                                      "2. Black or AA", 
+                                      race), 
+                        race = ifelse(is.na(race), 
+                                      "3. Other Minority", 
+                                      race), 
+                        state = NA, 
+                        state = ifelse(is.na(state) &
+                                               STATE_ORIGIN_CODE == "GA", 
+                                       "1. GA",
+                                       state), 
+                        state = ifelse(is.na(state) &
+                                               STATE_ORIGIN_CODE == "FL", 
+                                       "2. FL",
+                                       state), 
+                        state = ifelse(is.na(state), 
+                                       "3. Other OOS",
+                                       state)) %>%
+        left_join(ipeds)
+```
+
+```{r overall retention rate, echo=FALSE, warning=FALSE, message=FALSE}
+rate <- function(category) {
+        ## provides the overall rate
+        x <- data %>%
+                filter(tolower(ipeds.category) == category) %>%
+                select(term, 
+                       enrolled) %>%
+                mutate(term = paste("Fall", 
+                                    substr(term, 1, 4), 
+                                    sep = " ")) %>%
+                group_by(term) %>%
+                summarize(total = n(), 
+                          ret = sum(enrolled)) %>%
+                mutate(next_year = ret / total)
+        
+        y <- x 
+        
+        y <- y %>%
+                select(term, 
+                       total,
+                       next_year) %>%
+                mutate(next_year = format(round(next_year, 3), nsmall = 3)) %>%
+                gather(Category, 
+                       number, 
+                       -term) %>%
+                spread(term, 
+                       number) %>%
+                mutate(Category = ifelse(Category == "total", 
+                                         "1. Number", 
+                                         Category),
+                       Category = ifelse(Category == "next_year", 
+                                         "2. Next Fall", 
+                                         Category)) %>%
+                arrange(Category)
+        
+        return(y)
+}
+```
+
+```{r college, echo=FALSE, warning=FALSE, message=FALSE}
+college.rate <- function(category) {
+        ## provides the overall rate
+        x <- data %>%
+                filter(tolower(ipeds.category) == category) %>%
+                select(term, 
+                       COLLEGE,
+                       enrolled) %>%
+                rename(College = COLLEGE) %>%
+                mutate(term = paste("Fall", 
+                                    substr(term, 1, 4), 
+                                    sep = " ")) %>%
+                group_by(term, 
+                         College) %>%
+                summarize(total = n(),
+                          ret = sum(enrolled)) %>%
+                mutate(next_year = ret / total)
+        
+        y <- x 
+        
+        y <- y %>%
+                select(term, 
+                       College,
+                       total, 
+                       next_year) %>%
+                mutate(next_year = format(round(next_year, 3), nsmall = 3)) %>%
+                gather(Category, 
+                       number, 
+                       -term, 
+                       -College) %>%
+                spread(term, 
+                       number) %>%
+                mutate(Category = ifelse(Category == "total", 
+                                         "1. Number", 
+                                         Category),
+                       Category = ifelse(Category == "next_year", 
+                                         "2. Next Fall", 
+                                         Category)) %>%
+                arrange(College, 
+                        Category)
+        
+        return(y)
+        
+        }
+```
+
+```{r advisor, echo=FALSE, warning=FALSE, message=FALSE}
+advisor <- function(category) {
+        ## provides the overall rate
+        x <- data %>%
+                filter(tolower(ipeds.category) == category) %>%
+                select(term, 
+                       advisor,
+                       enrolled) %>%
+                rename(Advisor = advisor) %>%
+                mutate(term = paste("Fall", 
+                                    substr(term, 1, 4), 
+                                    sep = " ")) %>%
+                group_by(term, 
+                         Advisor) %>%
+                summarize(total = n(),
+                          ret = sum(enrolled)) %>%
+                mutate(next_year = ret / total)
+        
+        y <- x 
+        
+        y <- y %>%
+                select(term, 
+                       Advisor,
+                       total, 
+                       next_year) %>%
+                mutate(next_year = format(round(next_year, 3), nsmall = 3)) %>%
+                gather(Category, 
+                       number, 
+                       -term, 
+                       -Advisor) %>%
+                spread(term, 
+                       number) %>%
+                mutate(Category = ifelse(Category == "total", 
+                                         "1. Number", 
+                                         Category),
+                       Category = ifelse(Category == "next_year", 
+                                         "2. Next Fall", 
+                                         Category)) %>%
+                arrange(Advisor, 
+                        Category)
+        
+        return(y)
+        
+        }
+```
+
+```{r student population, echo=FALSE}
+stu.pop <- ipeds[1, 2]
+```
+
+### `r paste("Retention Rate of", simpleCap(x = stu.pop), "for Centralized Advising", sep = " ")`  
+##### `r paste("as of", abs(numb_days), ifelse(numb_days < 0, "Days Prior to The Start of Term", "After Start of Term"), sep = " ")`
+
+Exhibit 1 displays the overall retention rate of the `r sapply(stu.pop, simpleCap)` at `r abs(numb_days)` `r ifelse(numb_days < 0, "days prior to the start of term", "after start of term")`.  For `r colnames(rate(category = stu.pop))[length(rate(category = stu.pop))]` the current retention rate is `r rate(category = stu.pop)[which(rate(category = stu.pop)$Category == "2. Next Fall"),length(rate(category = stu.pop))]`, which is `r abs(as.numeric(rate(category = stu.pop)[which(rate(category = stu.pop)$Category == "2. Next Fall"),length(rate(category = stu.pop))]) - as.numeric(rate(category = stu.pop)[which(rate(category = stu.pop)$Category == "2. Next Fall"),length(rate(category = stu.pop))-1]))` `r ifelse(as.numeric(rate(category = stu.pop)[which(rate(category = stu.pop)$Category == "2. Next Fall"),length(rate(category = stu.pop))]) - as.numeric(rate(category = stu.pop)[which(rate(category = stu.pop)$Category == "2. Next Fall"),length(rate(category = stu.pop))-1]) < 0, "lower than", "higher than")` the retention rate of `r colnames(rate(category = stu.pop))[length(rate(category = stu.pop))-1]` at this point in time.
+
+**Exhibit 1: Overall Retention Rate**
+```{r, echo=FALSE, results = 'asis'}
+knitr::kable(rate(category = stu.pop))
+```
+
+Exhibit 2 displays the retention rate by college of primary major for the `r sapply(stu.pop, simpleCap)`. The colleges are by their abbreviations in the exhibit. All majors are retroactively placed into their Fall 2016 college (e.g., Athletic Training moved from COEHS to CONHS). Additionally undecided majors are pulled out of the College of Arts & Sciences and are listed in the UND. The OTH refers to the Learning Support, Transient, and Associate of Arts students. For the `r colnames(college.rate(category = stu.pop))[length(college.rate(category = stu.pop))]` cohort, the `r college.rate(category = stu.pop) %>% filter(Category == "2. Next Fall" & College != "OTH") %>% select(-Category) %>% gather(term, rate, -College) %>% mutate(term = substr(term, 6, 9)) %>% filter(term == max(term)) %>% filter(rate == max(rate)) %>% select(College)` has the highest retention rate, while `r ifelse(nrow(college.rate(category = stu.pop) %>% filter(Category == "2. Next Fall" & College != "OTH") %>% select(-Category) %>% gather(term, rate, -College) %>% mutate(term = substr(term, 6, 9)) %>% filter(term == max(term)) %>% filter(rate == min(rate)) %>% select(College)) == 1, college.rate(category = stu.pop) %>% filter(Category == "2. Next Fall" & College != "OTH") %>% select(-Category) %>% gather(term, rate, -College) %>% mutate(term = substr(term, 6, 9)) %>% filter(term == max(term)) %>% filter(rate == min(rate)) %>% select(College), ifelse(nrow(college.rate(category = stu.pop) %>% filter(Category == "2. Next Fall" & College != "OTH") %>% select(-Category) %>% gather(term, rate, -College) %>% mutate(term = substr(term, 6, 9)) %>% filter(term == max(term)) %>% filter(rate == min(rate)) %>% select(College)) == 2, paste(c(na.omit(as.character(unlist(college.rate(category = stu.pop) %>% filter(Category == "2. Next Fall" & College != "OTH") %>% select(-Category) %>% gather(term, rate, -College) %>% mutate(term = substr(term, 6, 9)) %>% filter(term == max(term)) %>% filter(rate == min(rate)) %>% select(College))))), collapse = " and "), NA))` has the lowest retention rate while excluding other majors category.
+
+**Exhibit 2: Retention Rate by College**
+```{r, echo=FALSE, results='asis'}
+knitr::kable(college.rate(category = stu.pop))
+```
+
+Exhibit 3 shows the retention rate by advisor for the `r sapply(stu.pop, simpleCap)`. 
+
+```{r, echo=FALSE, results = 'asis'}
+knitr::kable(advisor(category = stu.pop))
+```
